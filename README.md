@@ -336,3 +336,5 @@ pnpm dev
 ## 许可证
 
 AGPL-3.0 License（只要通过网络提供服务，就必须向用户公开修改后的源码）
+quickstart 启动帮助
+docker run -d -p 6379:6379 redis
