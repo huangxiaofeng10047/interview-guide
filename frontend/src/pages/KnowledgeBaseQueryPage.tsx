@@ -2,11 +2,11 @@ import {useEffect, useState, useRef, useTransition, useMemo} from 'react';
 import {motion, AnimatePresence} from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
 import {knowledgeBaseApi, type KnowledgeBaseItem, type SortOption} from '../api/knowledgebase';
 import {ragChatApi, type RagChatSessionListItem} from '../api/ragChat';
 import {formatDateOnly} from '../utils/date';
 import DeleteConfirmDialog from '../components/DeleteConfirmDialog';
+import CodeBlock from '../components/CodeBlock';
 import {
   Plus,
   Trash2,
@@ -288,15 +288,15 @@ export default function KnowledgeBaseQueryPage({ onBack, onUpload }: KnowledgeBa
   const formatMarkdown = (text: string): string => {
     if (!text) return '';
     return text
+      // 处理转义换行符
       .replace(/\\n/g, '\n')
+      // 确保标题 # 后有空格
       .replace(/^(#{1,6})([^\s#\n])/gm, '$1 $2')
-      .replace(/(^|\n)(\s*\d+)\.(?=\S)/g, '$1$2. ')
-      .replace(/(^|\n)(\s*[-*])(?=\S)/g, '$1$2 ')
-      .replace(/([^\n])\s*(\d+\.\s+)/g, '$1\n\n$2')
-      .replace(/([。！？）:：])\s*([-*])\s*/g, '$1\n\n$2 ')
-      .replace(/([^\n])\s+([-*])\s+/g, '$1\n\n$2 ')
-      .replace(/\*\*：/g, '**： ')
-      .replace(/([^\n])\s*(#{1,6}\s+[^\n]+)/g, '$1\n\n$2')
+      // 确保有序列表数字后有空格（如 1.xxx -> 1. xxx）
+      .replace(/^(\s*)(\d+)\.([^\s\n])/gm, '$1$2. $3')
+      // 确保无序列表 - 或 * 后有空格
+      .replace(/^(\s*[-*])([^\s\n-])/gm, '$1 $2')
+      // 压缩多余空行
       .replace(/\n{3,}/g, '\n\n');
   };
 
@@ -591,9 +591,35 @@ export default function KnowledgeBaseQueryPage({ onBack, onUpload }: KnowledgeBa
                                 prose-strong:text-slate-900 prose-strong:font-bold
                                 prose-ul:my-3 prose-ol:my-3
                                 prose-li:my-1 prose-li:leading-7
-                                prose-code:bg-slate-100 prose-code:text-primary-600 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none
+                                prose-code:bg-slate-100 prose-code:text-primary-600 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:before:content-none prose-code:after:content-none prose-code:font-normal
                                 marker:text-primary-500 marker:font-bold">
-                                <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  components={{
+                                    // 自定义代码块渲染
+                                    code: ({ className, children }) => {
+                                      const match = /language-(\w+)/.exec(className || '');
+                                      const isInline = !match;
+
+                                      if (isInline) {
+                                        return (
+                                          <code className="bg-slate-100 text-primary-600 px-1.5 py-0.5 rounded-md text-sm font-normal">
+                                            {children}
+                                          </code>
+                                        );
+                                      }
+
+                                      // 代码块使用 CodeBlock 组件
+                                      return (
+                                        <CodeBlock language={match[1]}>
+                                          {String(children).replace(/\n$/, '')}
+                                        </CodeBlock>
+                                      );
+                                    },
+                                    // 禁用默认 pre 渲染，由 CodeBlock 处理
+                                    pre: ({ children }) => <>{children}</>,
+                                  }}
+                                >
                                   {formatMarkdown(msg.content)}
                                 </ReactMarkdown>
                                 {loading && index === messages.length - 1 && (
