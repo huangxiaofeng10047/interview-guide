@@ -2,7 +2,7 @@
 # 智能AI面试官平台配置
 
 server:
-  port: 8089
+  port: 8080
 
 spring:
   application:
@@ -43,18 +43,27 @@ spring:
           subscriptionConnectionPoolSize: 50
 
   # Spring AI - 阿里云DashScope (OpenAI兼容模式)
+#  ai:
+#    openai:
+#      base-url: https://dashscope.aliyuncs.com/compatible-mode
+#      api-key: ${AI_BAILIAN_API_KEY}
   ai:
-    openai:
-      base-url: https://dashscope.aliyuncs.com/compatible-mode
-      api-key: ${AI_BAILIAN_API_KEY}
+    ollama:
+      base-url: http://127.0.0.1:11434 # Ollama默认服务地址
       chat:
         options:
-          model: qwen-plus
+          model: qwen-32k
           temperature: 0.7
+#        model: qwen-32k # 模型标识（名称+参数规模）
+#
+#      chat:
+#        options:
+#          model: qwen-plus
+#          temperature: 0.7
       # Embedding模型配置 - 使用text-embedding-v3
       embedding:
         options:
-          model: text-embedding-v3
+          model: nomic-embed-text:latest
     # 禁用自动重试机制，让异常立即返回
     retry:
       max-attempts: 1  # 不重试，失败立即返回
@@ -81,8 +90,8 @@ app:
   # RustFS (S3兼容) 存储配置
   storage:
     endpoint: http://localhost:9000
-    access-key: wr45VXJZhCxc6FAWz0YR
-    secret-key: GtKxV57WJkpw4CvASPBzTy2DYElLnRqh8dIXQa0m
+    access-key: rustfsadmin
+    secret-key: rustfsadmin
     bucket: interview-guide
     region: us-east-1
 
