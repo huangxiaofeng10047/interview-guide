@@ -3,6 +3,7 @@ package interview.guide.infrastructure.redis;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.*;
+import org.redisson.api.options.KeysScanOptions;
 import org.redisson.api.stream.StreamAddArgs;
 import org.redisson.api.stream.StreamCreateGroupArgs;
 import org.redisson.api.stream.StreamMessageId;
@@ -199,6 +200,56 @@ public class RedisService {
     // ==================== Stream 消息队列 ====================
 
     /**
+     * Stream 消息处理器接口
+     */
+    @FunctionalInterface
+    public interface StreamMessageProcessor {
+        void process(StreamMessageId messageId, Map<String, String> data);
+    }
+
+    /**
+     * 消费 Stream 消息（阻塞模式）
+     * 使用 Redis BLOCK 参数，让服务端等待消息，比客户端轮询更高效
+     *
+     * @param streamKey      Stream 键
+     * @param groupName      消费者组名
+     * @param consumerName   消费者名
+     * @param count          每次读取数量
+     * @param blockTimeoutMs 阻塞等待超时时间（毫秒），0 表示无限等待
+     * @param processor      消息处理器
+     * @return true 如果处理了消息，false 如果超时无消息
+     */
+    public boolean streamConsumeMessages(
+            String streamKey,
+            String groupName,
+            String consumerName,
+            int count,
+            long blockTimeoutMs,
+            StreamMessageProcessor processor) {
+
+        RStream<String, String> stream = redissonClient.getStream(streamKey, StringCodec.INSTANCE);
+
+        // 使用阻塞读取，让 Redis 服务端等待消息
+        Map<StreamMessageId, Map<String, String>> messages = stream.readGroup(
+            groupName,
+            consumerName,
+            StreamReadGroupArgs.neverDelivered()
+                .count(count)
+                .timeout(Duration.ofMillis(blockTimeoutMs))
+        );
+
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+
+        for (Map.Entry<StreamMessageId, Map<String, String>> entry : messages.entrySet()) {
+            processor.process(entry.getKey(), entry.getValue());
+        }
+
+        return true;
+    }
+
+    /**
      * 创建消费者组（如果不存在）
      */
     public void createStreamGroup(String streamKey, String groupName) {
@@ -313,6 +364,6 @@ public class RedisService {
      */
     public Iterable<String> findKeysByPattern(String pattern) {
         RKeys keys = redissonClient.getKeys();
-        return keys.getKeysByPattern(pattern);
+        return keys.getKeys(KeysScanOptions.defaults().pattern(pattern));
     }
 }
