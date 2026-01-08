@@ -1,45 +1,115 @@
-# rustfs启动
 services:
-  rustfs:
-    image: rustfs/rustfs:latest
-    container_name: rustfs
-    hostname: rustfs
+  postgres:
+    # 使用官方 pgvector 镜像
+    image: pgvector/pgvector:pg16
+    container_name: interview-postgres
     environment:
-      # Use service names and correct disk indexing (1..4 to match mounted paths)
-      - RUSTFS_VOLUMES=/data
-      - RUSTFS_ADDRESS=0.0.0.0:9000
-      - RUSTFS_CONSOLE_ENABLE=true
-      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
-      - RUSTFS_ACCESS_KEY=rustfsadmin
-      - RUSTFS_SECRET_KEY=rustfsadmin
-      - RUSTFS_CMD=rustfs
-    ports:
-      - "9000:9000"  # API endpoint
-      - "9001:9001"  # Console
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: interview_guide
     volumes:
-      - data:/data
-      - logs:/logs
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "sh", "-c",
-          "curl -f http://localhost:9000/health && curl -f http://localhost:9001/health"
-        ]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
       timeout: 5s
-      retries: 3
-      start_period: 30s
-    networks:
-      - rustfs
+      retries: 5
 
-networks:
-  rustfs:
-    driver: bridge
-    name: rustfs
+  redis:
+    image: redis:7
+    container_name: interview-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    container_name: interview-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/interview-guide;
+      /usr/bin/mc anonymous set public myminio/interview-guide;
+      exit 0;
+      "
+
+  app:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: interview-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+    environment:
+      # Database
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: interview_guide
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      
+      # Object Storage
+      APP_STORAGE_ENDPOINT: http://minio:9000
+      APP_STORAGE_ACCESS_KEY: minioadmin
+      APP_STORAGE_SECRET_KEY: minioadmin
+      APP_STORAGE_BUCKET: interview-guide
+      APP_STORAGE_REGION: us-east-1
+      
+      # AI API Key (Required)
+      AI_BAILIAN_API_KEY: ${AI_BAILIAN_API_KEY}
+      AI_MODEL: ${AI_MODEL:-qwen-plus}
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build: ./frontend
+    container_name: interview-frontend
+    depends_on:
+      - app
+    ports:
+      - "80:80"
 
 volumes:
-  data:
-    driver: local
-  logs:
-    driver: local
+  postgres_data:
+  redis_data:
+  minio_data:

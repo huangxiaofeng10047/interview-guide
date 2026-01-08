@@ -10,14 +10,20 @@ spring:
 
   # PostgreSQL数据库配置
   datasource:
+<<<<<<< HEAD
     url: jdbc:postgresql://localhost:5432/interview_guide
     username: postgres
     password: postgres
+=======
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:interview_guide}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456}
+>>>>>>> upstream/master
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: create #首次启动用 create，表创建成功后，改回 update
     show-sql: false
     properties:
       hibernate:
@@ -29,19 +35,20 @@ spring:
       enabled: true
       max-file-size: 50MB  # 支持知识库上传（简历限制在业务层检查）
       max-request-size: 50MB
+  
 
   # Redisson配置 (使用 spring.redis.redisson，参考官方文档)
   redis:
     redisson:
       config: |
         singleServerConfig:
-          address: "redis://localhost:6379"
+          address: "redis://${REDIS_HOST:localhost}:${REDIS_PORT:6379}"
           database: 0
           connectionMinimumIdleSize: 10
           connectionPoolSize: 64
           subscriptionConnectionMinimumIdleSize: 1
           subscriptionConnectionPoolSize: 50
-
+  
   # Spring AI - 阿里云DashScope (OpenAI兼容模式)
 #  ai:
 #    openai:
@@ -52,7 +59,7 @@ spring:
       base-url: http://127.0.0.1:11434 # Ollama默认服务地址
       chat:
         options:
-          model: qwen-32k
+          model: ${AI_MODEL:qwen-32k}
           temperature: 0.7
 #        model: qwen-32k # 模型标识（名称+参数规模）
 #
@@ -74,7 +81,7 @@ spring:
         index-type: HNSW
         distance-type: COSINE_DISTANCE
         dimensions: 1024  # text-embedding-v3实际生成的向量维度
-        initialize-schema: false  # 表已创建，不需要再初始化
+        initialize-schema: true # 开发环境设置为 true，方便快速启动。生产环境设置为 false，手动管理数据库 schema，避免意外变更。
         remove-existing-vector-store-table: false  # 保留现有表和数据
 
 # Application custom configuration
@@ -89,12 +96,12 @@ app:
 
   # RustFS (S3兼容) 存储配置
   storage:
-    endpoint: http://localhost:9000
-    access-key: rustfsadmin
-    secret-key: rustfsadmin
-    bucket: interview-guide
-    region: us-east-1
-
+    endpoint: ${APP_STORAGE_ENDPOINT:http://localhost:9000}
+    access-key: ${APP_STORAGE_ACCESS_KEY:rustfsadmin}
+    secret-key: ${APP_STORAGE_SECRET_KEY:rustfsadmin}
+    bucket: ${APP_STORAGE_BUCKET:interview-guide}
+    region: ${APP_STORAGE_REGION:us-east-1}
+  
   # CORS配置 - React前端
   cors:
-    allowed-origins: http://localhost:5173,http://localhost:5174
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:80}

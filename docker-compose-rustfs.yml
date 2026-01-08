@@ -1,0 +1,45 @@
+# rustfs启动
+services:
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: rustfs
+    hostname: rustfs
+    environment:
+      # Use service names and correct disk indexing (1..4 to match mounted paths)
+      - RUSTFS_VOLUMES=/data
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
+      - RUSTFS_ACCESS_KEY=rustfsadmin
+      - RUSTFS_SECRET_KEY=rustfsadmin
+      - RUSTFS_CMD=rustfs
+    ports:
+      - "9000:9000"  # API endpoint
+      - "9001:9001"  # Console
+    volumes:
+      - data:/data
+      - logs:/logs
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "sh", "-c",
+          "curl -f http://localhost:9000/health && curl -f http://localhost:9001/health"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - rustfs
+
+networks:
+  rustfs:
+    driver: bridge
+    name: rustfs
+
+volumes:
+  data:
+    driver: local
+  logs:
+    driver: local
