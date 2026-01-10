@@ -1,6 +1,6 @@
 import { request, getErrorMessage } from './request';
 
-const API_BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:8089';
+const API_BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:8080';
 
 // 向量化状态
 export type VectorStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
