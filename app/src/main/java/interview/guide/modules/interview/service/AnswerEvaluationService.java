@@ -116,6 +116,7 @@ public class AnswerEvaluationService {
             throw e;
         } catch (Exception e) {
             log.error("面试评估失败: {}", e.getMessage(), e);
+            e.printStackTrace();
             throw new BusinessException(ErrorCode.INTERVIEW_EVALUATION_FAILED, 
                 "面试评估失败：" + e.getMessage());
         }
@@ -151,7 +152,8 @@ public class AnswerEvaluationService {
 
         // 处理问题评估
         List<QuestionEvaluationDTO> evaluations = dto.questionEvaluations();
-        for (int i = 0; i < Math.min(evaluations.size(), questions.size()); i++) {
+        Integer evaluationsSize=evaluations==null?0:evaluations.size();
+        for (int i = 0; i < Math.min(evaluationsSize, questions.size()); i++) {
             QuestionEvaluationDTO eval = evaluations.get(i);
             InterviewQuestionDTO q = questions.get(i);
             int qIndex = q.questionIndex();
