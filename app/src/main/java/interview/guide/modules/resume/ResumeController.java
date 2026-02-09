@@ -1,5 +1,6 @@
 package interview.guide.modules.resume;
 
+import interview.guide.common.annotation.RateLimit;
 import interview.guide.common.result.Result;
 import interview.guide.modules.resume.model.ResumeDetailDTO;
 import interview.guide.modules.resume.model.ResumeListItemDTO;
@@ -39,6 +40,7 @@ public class ResumeController {
      * @return 简历分析结果，包含评分和建议
      */
     @PostMapping(value = "/api/resumes/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RateLimit(dimensions = {RateLimit.Dimension.GLOBAL, RateLimit.Dimension.IP}, count = 5)
     public Result<Map<String, Object>> uploadAndAnalyze(@RequestParam("file") MultipartFile file) {
         Map<String, Object> result = uploadService.uploadAndAnalyze(file);
         boolean isDuplicate = (Boolean) result.get("duplicate");
@@ -74,13 +76,13 @@ public class ResumeController {
         try {
             var result = historyService.exportAnalysisPdf(id);
             String filename = URLEncoder.encode(result.filename(), StandardCharsets.UTF_8);
-            
+
             return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + filename)
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(result.pdfBytes());
         } catch (Exception e) {
-            log.error("导出PDF失败", e);
+            log.error("导出PDF失败: resumeId={}", id, e);
             return ResponseEntity.internalServerError().build();
         }
     }
@@ -105,6 +107,7 @@ public class ResumeController {
      * @return 结果
      */
     @PostMapping("/api/resumes/{id}/reanalyze")
+    @RateLimit(dimensions = {RateLimit.Dimension.GLOBAL, RateLimit.Dimension.IP}, count = 2)
     public Result<Void> reanalyze(@PathVariable Long id) {
         uploadService.reanalyze(id);
         return Result.success(null);
