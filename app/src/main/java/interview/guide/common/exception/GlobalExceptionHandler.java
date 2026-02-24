@@ -4,6 +4,8 @@ import interview.guide.common.result.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -79,6 +81,26 @@ public class GlobalExceptionHandler {
     public Result<Void> handleIllegalArgumentException(IllegalArgumentException e) {
         log.warn("非法参数: {}", e.getMessage());
         return Result.error(ErrorCode.BAD_REQUEST, e.getMessage());
+    }
+    
+    /**
+     * 处理用户不存在异常
+     */
+    @ExceptionHandler(UsernameNotFoundException.class)
+    @ResponseStatus(HttpStatus.OK)
+    public Result<Void> handleUsernameNotFoundException(UsernameNotFoundException e) {
+        log.warn("用户不存在: {}", e.getMessage());
+        return Result.error(ErrorCode.AUTH_USER_NOT_FOUND);
+    }
+    
+    /**
+     * 处理认证失败异常（用户名或密码错误）
+     */
+    @ExceptionHandler(BadCredentialsException.class)
+    @ResponseStatus(HttpStatus.OK)
+    public Result<Void> handleBadCredentialsException(BadCredentialsException e) {
+        log.warn("认证失败: {}", e.getMessage());
+        return Result.error(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
     
     /**

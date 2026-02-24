@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, usePa
 import Layout from './components/Layout';
 import { useEffect, useState, Suspense, lazy } from 'react';
 import { historyApi } from './api/history';
+import { isAuthenticated } from './api/auth';
 import type { UploadKnowledgeBaseResponse } from './api/knowledgebase';
 
 // Lazy load components
@@ -13,6 +14,8 @@ const InterviewHistoryPage = lazy(() => import('./pages/InterviewHistoryPage'));
 const KnowledgeBaseQueryPage = lazy(() => import('./pages/KnowledgeBaseQueryPage'));
 const KnowledgeBaseUploadPage = lazy(() => import('./pages/KnowledgeBaseUploadPage'));
 const KnowledgeBaseManagePage = lazy(() => import('./pages/KnowledgeBaseManagePage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 
 // Loading component
 const Loading = () => (
@@ -20,6 +23,14 @@ const Loading = () => (
     <div className="w-10 h-10 border-3 border-slate-200 border-t-primary-500 rounded-full animate-spin" />
   </div>
 );
+
+// 认证保护的路由组件
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  if (!isAuthenticated()) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+};
 
 // 上传页面包装器
 function UploadPageWrapper() {
@@ -140,7 +151,12 @@ function App() {
     <BrowserRouter>
       <Suspense fallback={<Loading />}>
         <Routes>
-          <Route path="/" element={<Layout />}>
+          {/* 登录和注册页面，不需要布局 */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          
+          {/* 主应用路由，需要布局和认证 */}
+          <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             {/* 默认重定向到上传页面 */}
             <Route index element={<Navigate to="/upload" replace />} />
 

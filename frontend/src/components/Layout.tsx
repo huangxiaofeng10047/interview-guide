@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Sparkles,
@@ -8,7 +8,10 @@ import {
   Database,
   MessageSquare,
   ChevronRight,
+  User,
+  LogOut,
 } from 'lucide-react';
+import { getAuthInfo, clearAuthInfo } from '../api/auth';
 
 interface NavItem {
   id: string;
@@ -26,7 +29,15 @@ interface NavGroup {
 
 export default function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const currentPath = location.pathname;
+  const { userInfo } = getAuthInfo();
+
+  // 退出登录处理
+  const handleLogout = () => {
+    clearAuthInfo();
+    navigate('/login');
+  };
 
   // 按业务模块组织的导航项
   const navGroups: NavGroup[] = [
@@ -132,11 +143,27 @@ export default function Layout() {
           </div>
         </nav>
 
-        {/* 底部信息 */}
+        {/* 用户信息和退出登录 */}
         <div className="p-4 border-t border-slate-100">
-          <div className="px-3 py-2 bg-gradient-to-r from-primary-50 to-indigo-50 rounded-xl">
-            <p className="text-xs text-primary-600 font-medium">AI 面试助手 v1.0</p>
-            <p className="text-xs text-slate-400 mt-0.5">Powered by AI</p>
+          <div className="px-3 py-3 bg-white rounded-xl shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary-600">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-700">{userInfo?.username || '用户'}</p>
+                  <p className="text-xs text-slate-400">{userInfo?.email || ''}</p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="text-sm font-medium">退出登录</span>
+            </button>
           </div>
         </div>
       </aside>

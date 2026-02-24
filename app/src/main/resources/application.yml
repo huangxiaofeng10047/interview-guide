@@ -87,6 +87,12 @@ spring:
 
 # Application custom configuration
 app:
+  # JWT配置
+  jwt:
+    secret: ${APP_JWT_SECRET:SGVsbG8gV29ybGQhIFRoaXMgaXMgYSBzZWNyZXQga2V5IGZvciBqZXd0IG1vZGlmaWNhdGlvbi4gVGhpcyBpcyBub3QgYSBjb25zZW50IGtleSBmb3IgcHJvZHVjdGlvbiBwcm9ncmFtIGFuZCBzaG91bGQgaGF2ZSBiZWVuIGNhcmQgaW4gZmlsZS4=}
+    expiration: ${APP_JWT_EXPIRATION:3600000} # 1小时，单位毫秒
+    refresh:
+      expiration: ${APP_JWT_REFRESH_EXPIRATION:86400000} # 24小时，单位毫秒
   interview:
     follow-up-count: ${APP_INTERVIEW_FOLLOW_UP_COUNT:1}
     evaluation:

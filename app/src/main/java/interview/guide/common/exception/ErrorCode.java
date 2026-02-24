@@ -61,7 +61,13 @@ public enum ErrorCode {
     AI_RATE_LIMIT_EXCEEDED(7005, "AI服务调用频率超限"),
 
     // ========== 限流模块错误 8xxx ==========
-    RATE_LIMIT_EXCEEDED(8001, "请求过于频繁，请稍后再试");
+    RATE_LIMIT_EXCEEDED(8001, "请求过于频繁，请稍后再试"),
+    
+    // ========== 认证模块错误 9xxx ==========
+    AUTH_USER_NOT_FOUND(9001, "用户名或密码错误"),
+    AUTH_INVALID_CREDENTIALS(9002, "用户名或密码错误"),
+    AUTH_USER_ALREADY_EXISTS(9003, "用户名已存在"),
+    AUTH_EMAIL_ALREADY_EXISTS(9004, "邮箱已存在");
     
     private final Integer code;
     private final String message;

@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import { getAuthInfo } from './auth';
 
 /**
  * 后端统一响应结构
@@ -9,12 +10,31 @@ interface Result<T = unknown> {
   data: T;
 }
 
-const baseURL = import.meta.env.PROD ? '' : 'http://localhost:8080';
+const baseURL = '';
 
 const instance: AxiosInstance = axios.create({
   baseURL,
   timeout: 60000,
 });
+
+/**
+ * 请求拦截器
+ * 
+ * 添加认证令牌到请求头
+ */
+instance.interceptors.request.use(
+  (config) => {
+    // 添加认证信息
+    const { token, tokenType } = getAuthInfo();
+    if (token && tokenType && config.headers) {
+      config.headers.Authorization = `${tokenType} ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 /**
  * 响应拦截器
