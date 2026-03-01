@@ -1,5 +1,6 @@
 package interview.guide.modules.interview.service;
 
+import interview.guide.common.ai.StructuredOutputInvoker;
 import interview.guide.common.exception.BusinessException;
 import interview.guide.common.exception.ErrorCode;
 import interview.guide.modules.interview.model.InterviewQuestionDTO;
@@ -34,6 +35,7 @@ public class InterviewQuestionService {
     private final PromptTemplate systemPromptTemplate;
     private final PromptTemplate userPromptTemplate;
     private final BeanOutputConverter<QuestionListDTO> outputConverter;
+    private final StructuredOutputInvoker structuredOutputInvoker;
     private final int followUpCount;
     
     // 问题类型权重分配（按优先级）
@@ -43,7 +45,6 @@ public class InterviewQuestionService {
     private static final double JAVA_BASIC_RATIO = 0.10;   // 10% Java基础
     private static final double JAVA_COLLECTION_RATIO = 0.10; // 10% 集合
     private static final double JAVA_CONCURRENT_RATIO = 0.10; // 10% 并发
-    private static final double SPRING_RATIO = 0.10;       // 10% Spring/SpringBoot
     private static final int MAX_FOLLOW_UP_COUNT = 2;
     
     // 中间DTO用于接收AI响应
@@ -60,10 +61,12 @@ public class InterviewQuestionService {
     
     public InterviewQuestionService(
             ChatClient.Builder chatClientBuilder,
+            StructuredOutputInvoker structuredOutputInvoker,
             @Value("classpath:prompts/interview-question-system.st") Resource systemPromptResource,
             @Value("classpath:prompts/interview-question-user.st") Resource userPromptResource,
             @Value("${app.interview.follow-up-count:1}") int followUpCount) throws IOException {
         this.chatClient = chatClientBuilder.build();
+        this.structuredOutputInvoker = structuredOutputInvoker;
         this.systemPromptTemplate = new PromptTemplate(systemPromptResource.getContentAsString(StandardCharsets.UTF_8));
         this.userPromptTemplate = new PromptTemplate(userPromptResource.getContentAsString(StandardCharsets.UTF_8));
         this.outputConverter = new BeanOutputConverter<>(QuestionListDTO.class);
@@ -118,11 +121,16 @@ public class InterviewQuestionService {
             // 调用AI
             QuestionListDTO dto;
             try {
-                dto = chatClient.prompt()
-                    .system(systemPromptWithFormat)
-                    .user(userPrompt)
-                    .call()
-                    .entity(outputConverter);
+                dto = structuredOutputInvoker.invoke(
+                    chatClient,
+                    systemPromptWithFormat,
+                    userPrompt,
+                    outputConverter,
+                    ErrorCode.INTERVIEW_QUESTION_GENERATION_FAILED,
+                    "面试问题生成失败：",
+                    "结构化问题生成",
+                    log
+                );
                 log.debug("AI响应解析成功: questions count={}", dto.questions().size());
             } catch (Exception e) {
                 log.error("面试问题生成AI调用失败: {}", e.getMessage(), e);
@@ -189,7 +197,8 @@ public class InterviewQuestionService {
                 continue;
             }
             QuestionType type = parseQuestionType(q.type());
-            questions.add(InterviewQuestionDTO.create(index++, q.question(), type, q.category()));
+            int mainQuestionIndex = index;
+            questions.add(InterviewQuestionDTO.create(index++, q.question(), type, q.category(), false, null));
 
             List<String> followUps = sanitizeFollowUps(q.followUps());
             for (int i = 0; i < followUps.size(); i++) {
@@ -197,7 +206,9 @@ public class InterviewQuestionService {
                     index++,
                     followUps.get(i),
                     type,
-                    buildFollowUpCategory(q.category(), i + 1)
+                    buildFollowUpCategory(q.category(), i + 1),
+                    true,
+                    mainQuestionIndex
                 ));
             }
         }
@@ -241,15 +252,20 @@ public class InterviewQuestionService {
                 index++,
                 mainQuestion,
                 type,
-                category
+                category,
+                false,
+                null
             ));
 
+            int mainQuestionIndex = index - 1;
             for (int j = 0; j < followUpCount; j++) {
                 questions.add(InterviewQuestionDTO.create(
                     index++,
                     buildDefaultFollowUp(mainQuestion, j + 1),
                     type,
-                    buildFollowUpCategory(category, j + 1)
+                    buildFollowUpCategory(category, j + 1),
+                    true,
+                    mainQuestionIndex
                 ));
             }
         }

@@ -1,5 +1,6 @@
 package interview.guide.modules.interview.service;
 
+import interview.guide.common.ai.StructuredOutputInvoker;
 import interview.guide.common.exception.BusinessException;
 import interview.guide.common.exception.ErrorCode;
 import interview.guide.modules.interview.model.InterviewQuestionDTO;
@@ -42,6 +43,7 @@ public class AnswerEvaluationService {
     private final PromptTemplate summarySystemPromptTemplate;
     private final PromptTemplate summaryUserPromptTemplate;
     private final BeanOutputConverter<FinalSummaryDTO> summaryOutputConverter;
+    private final StructuredOutputInvoker structuredOutputInvoker;
     private final int evaluationBatchSize;
     
     // 中间DTO用于接收AI响应
@@ -75,12 +77,14 @@ public class AnswerEvaluationService {
     
     public AnswerEvaluationService(
             ChatClient.Builder chatClientBuilder,
+            StructuredOutputInvoker structuredOutputInvoker,
             @Value("classpath:prompts/interview-evaluation-system.st") Resource systemPromptResource,
             @Value("classpath:prompts/interview-evaluation-user.st") Resource userPromptResource,
             @Value("classpath:prompts/interview-evaluation-summary-system.st") Resource summarySystemPromptResource,
             @Value("classpath:prompts/interview-evaluation-summary-user.st") Resource summaryUserPromptResource,
             @Value("${app.interview.evaluation.batch-size:8}") int evaluationBatchSize) throws IOException {
         this.chatClient = chatClientBuilder.build();
+        this.structuredOutputInvoker = structuredOutputInvoker;
         this.systemPromptTemplate = new PromptTemplate(systemPromptResource.getContentAsString(StandardCharsets.UTF_8));
         this.userPromptTemplate = new PromptTemplate(userPromptResource.getContentAsString(StandardCharsets.UTF_8));
         this.outputConverter = new BeanOutputConverter<>(EvaluationReportDTO.class);
@@ -187,11 +191,16 @@ public class AnswerEvaluationService {
 
         String systemPromptWithFormat = systemPrompt + "\n\n" + outputConverter.getFormat();
         try {
-            EvaluationReportDTO dto = chatClient.prompt()
-                .system(systemPromptWithFormat)
-                .user(userPrompt)
-                .call()
-                .entity(outputConverter);
+            EvaluationReportDTO dto = structuredOutputInvoker.invoke(
+                chatClient,
+                systemPromptWithFormat,
+                userPrompt,
+                outputConverter,
+                ErrorCode.INTERVIEW_EVALUATION_FAILED,
+                "面试评估失败：",
+                "批次评估",
+                log
+            );
             log.debug("批次评估完成: sessionId={}, range=[{}, {}), batchSize={}",
                 sessionId, start, end, batchQuestions.size());
             return dto;
@@ -279,11 +288,16 @@ public class AnswerEvaluationService {
             String summaryUserPrompt = summaryUserPromptTemplate.render(variables);
 
             String systemPromptWithFormat = summarySystemPrompt + "\n\n" + summaryOutputConverter.getFormat();
-            FinalSummaryDTO dto = chatClient.prompt()
-                .system(systemPromptWithFormat)
-                .user(summaryUserPrompt)
-                .call()
-                .entity(summaryOutputConverter);
+            FinalSummaryDTO dto = structuredOutputInvoker.invoke(
+                chatClient,
+                systemPromptWithFormat,
+                summaryUserPrompt,
+                summaryOutputConverter,
+                ErrorCode.INTERVIEW_EVALUATION_FAILED,
+                "面试总结失败：",
+                "总结评估",
+                log
+            );
 
             String overallFeedback = dto != null && dto.overallFeedback() != null && !dto.overallFeedback().isBlank()
                 ? dto.overallFeedback()

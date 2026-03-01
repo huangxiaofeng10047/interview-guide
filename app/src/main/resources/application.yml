@@ -59,14 +59,8 @@ spring:
       base-url: http://127.0.0.1:11434 # Ollama默认服务地址
       chat:
         options:
-          model: ${AI_MODEL:qwen-32k}
-          temperature: 0.7
-#        model: qwen-32k # 模型标识（名称+参数规模）
-#
-#      chat:
-#        options:
-#          model: qwen-plus
-#          temperature: 0.7
+          model: ${AI_MODEL:qwen-plus}
+          temperature: 0.2
       # Embedding模型配置 - 使用text-embedding-v3
       embedding:
         options:
@@ -93,6 +87,21 @@ app:
     expiration: ${APP_JWT_EXPIRATION:3600000} # 1小时，单位毫秒
     refresh:
       expiration: ${APP_JWT_REFRESH_EXPIRATION:86400000} # 24小时，单位毫秒
+  ai:
+    # 结构化输出重试次数（用于 BeanOutputConverter 解析失败时的业务层重试）
+    structured-max-attempts: ${APP_AI_STRUCTURED_MAX_ATTEMPTS:2}
+    # 重试时是否将上次错误原因注入提示词，帮助模型定向修复输出
+    structured-include-last-error: ${APP_AI_STRUCTURED_INCLUDE_LAST_ERROR:true}
+    rag:
+      rewrite:
+        enabled: ${APP_AI_RAG_REWRITE_ENABLED:true}
+      search:
+        short-query-length: ${APP_AI_RAG_SHORT_QUERY_LENGTH:4}
+        topk-short: ${APP_AI_RAG_TOPK_SHORT:20}
+        topk-medium: ${APP_AI_RAG_TOPK_MEDIUM:12}
+        topk-long: ${APP_AI_RAG_TOPK_LONG:8}
+        min-score-short: ${APP_AI_RAG_MIN_SCORE_SHORT:0.18}
+        min-score-default: ${APP_AI_RAG_MIN_SCORE_DEFAULT:0.28}
   interview:
     follow-up-count: ${APP_INTERVIEW_FOLLOW_UP_COUNT:1}
     evaluation:
