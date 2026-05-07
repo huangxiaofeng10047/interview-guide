@@ -10,11 +10,19 @@ import org.springframework.web.filter.CorsFilter;
 import java.util.Arrays;
 import java.util.List;
 
+/**
+ * CORS跨域配置
+ */
 @Configuration
 public class CorsConfig {
 
     @Value("${app.cors.allowed-origins:*}")
     private String allowedOrigins;
+    private final CorsProperties corsProperties;
+
+    public CorsConfig(CorsProperties corsProperties) {
+        this.corsProperties = corsProperties;
+    }
 
     @Bean
     public CorsFilter corsFilter() {
@@ -31,13 +39,20 @@ public class CorsConfig {
         }
         
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+
+        String allowedOrigins = corsProperties.getAllowedOrigins();
+        Arrays.stream(allowedOrigins.split(","))
+              .map(String::trim)
+              .forEach(config::addAllowedOrigin);
+
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
-        
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        
+        source.registerCorsConfiguration("/api/**", config);
+
         return new CorsFilter(source);
     }
 }

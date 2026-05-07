@@ -1,3 +1,13 @@
+# Dependencies (will be installed inside container)
+node_modules
+
+# Build output (will be generated inside container)
+dist
+build
+
+# Development files
+.env.local
+.env.*.local
 # Logs
 logs
 *.log
@@ -10,6 +20,7 @@ lerna-debug.log*
 # Dependencies
 node_modules
 
+# IDE
 # Build outputs
 dist
 dist-ssr
@@ -19,7 +30,25 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 .idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Test coverage
+coverage
+
+# Documentation
+*.md
+!README.md
 *.suo
 *.ntvs*
 *.njsproj

@@ -4,8 +4,6 @@ import interview.guide.common.result.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -86,22 +84,22 @@ public class GlobalExceptionHandler {
     /**
      * 处理用户不存在异常
      */
-    @ExceptionHandler(UsernameNotFoundException.class)
-    @ResponseStatus(HttpStatus.OK)
-    public Result<Void> handleUsernameNotFoundException(UsernameNotFoundException e) {
-        log.warn("用户不存在: {}", e.getMessage());
-        return Result.error(ErrorCode.AUTH_USER_NOT_FOUND);
-    }
+//    @ExceptionHandler(UsernameNotFoundException.class)
+//    @ResponseStatus(HttpStatus.OK)
+//    public Result<Void> handleUsernameNotFoundException(UsernameNotFoundException e) {
+//        log.warn("用户不存在: {}", e.getMessage());
+//        return Result.error(ErrorCode.AUTH_USER_NOT_FOUND);
+//    }
     
     /**
      * 处理认证失败异常（用户名或密码错误）
      */
-    @ExceptionHandler(BadCredentialsException.class)
-    @ResponseStatus(HttpStatus.OK)
-    public Result<Void> handleBadCredentialsException(BadCredentialsException e) {
-        log.warn("认证失败: {}", e.getMessage());
-        return Result.error(ErrorCode.AUTH_INVALID_CREDENTIALS);
-    }
+//    @ExceptionHandler(BadCredentialsException.class)
+//    @ResponseStatus(HttpStatus.OK)
+//    public Result<Void> handleBadCredentialsException(BadCredentialsException e) {
+//        log.warn("认证失败: {}", e.getMessage());
+//        return Result.error(ErrorCode.AUTH_INVALID_CREDENTIALS);
+//    }
     
     /**
      * 处理 AI 服务网络异常（SSL握手失败、连接超时等）
@@ -149,6 +147,26 @@ public class GlobalExceptionHandler {
         return Result.error(ErrorCode.AI_SERVICE_ERROR, "AI服务调用失败，请稍后重试");
     }
     
+    /**
+     * 处理 404 - 资源未找到异常
+     */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.OK)
+    public Result<Void> handleNoResourceFoundException(org.springframework.web.servlet.resource.NoResourceFoundException e) {
+        log.warn("资源未找到: {}", e.getResourcePath());
+        return Result.error(ErrorCode.NOT_FOUND, "API 接口不存在");
+    }
+
+    /**
+     * 处理请求方法不支持异常
+     */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    @ResponseStatus(HttpStatus.OK)
+    public Result<Void> handleHttpRequestMethodNotSupportedException(org.springframework.web.HttpRequestMethodNotSupportedException e) {
+        log.warn("请求方法不支持: {} {}", e.getMethod(), e.getSupportedHttpMethods());
+        return Result.error(ErrorCode.METHOD_NOT_ALLOWED, "请求方法不支持: " + e.getMethod());
+    }
+
     /**
      * 处理其他未知异常
      * 统一返回 HTTP 200，通过业务错误码区分异常类型
