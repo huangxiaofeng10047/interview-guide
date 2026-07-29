@@ -89,6 +89,32 @@ class LlmProviderRegistryTest {
     }
 
     @Test
+    @DisplayName("不同 ChatClient 配方共享同一个 provider 级 ChatModel")
+    void chatClientVariantsShareProviderChatModel() {
+        String providerId = "test-provider";
+        ProviderConfig config = new ProviderConfig();
+        config.setBaseUrl("http://localhost:1234/v1");
+        config.setApiKey("test-key");
+        config.setModel("test-model");
+
+        Map<String, ProviderConfig> providers = new HashMap<>();
+        providers.put(providerId, config);
+
+        when(properties.getProviders()).thenReturn(providers);
+
+        ChatClient defaultClient = registry.getChatClient(providerId);
+        ChatClient plainClient = registry.getPlainChatClient(providerId);
+        ChatClient voiceClient = registry.getVoiceChatClient(providerId);
+
+        assertNotNull(defaultClient);
+        assertNotNull(plainClient);
+        assertNotNull(voiceClient);
+        assertNotSame(defaultClient, plainClient, "Default and plain clients should keep advisor recipes isolated");
+        assertNotSame(defaultClient, voiceClient, "Default and voice clients should keep advisor recipes isolated");
+        verify(properties, times(1)).getProviders();
+    }
+
+    @Test
     @DisplayName("Throw exception for unknown provider")
     void testGetChatClient_UnknownProvider() {
         // Given
@@ -196,6 +222,15 @@ class LlmProviderRegistryTest {
         @DisplayName("空白 providerId 回退到默认 provider")
         void blankProviderFallsBackToDefault() {
             ChatClient client = registry.getChatClientOrDefault("   ");
+
+            assertNotNull(client);
+            assertSame(client, registry.getChatClient("dashscope"));
+        }
+
+        @Test
+        @DisplayName("default providerId 作为默认 provider 别名")
+        void defaultAliasFallsBackToDefault() {
+            ChatClient client = registry.getChatClientOrDefault("default");
 
             assertNotNull(client);
             assertSame(client, registry.getChatClient("dashscope"));

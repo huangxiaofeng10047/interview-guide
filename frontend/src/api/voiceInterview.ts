@@ -51,7 +51,7 @@ export interface VoiceAnswerDetail {
 export interface VoiceEvaluationDetail {
   sessionId: number;
   totalQuestions: number;
-  overallScore: number;
+  overallScore: number | null;
   overallFeedback: string;
   strengths: string[];
   improvements: string[];
@@ -64,6 +64,7 @@ export interface VoiceEvaluationDetail {
 export interface EvaluationStatusResponse {
   evaluateStatus: string | null;  // PENDING | PROCESSING | COMPLETED | FAILED
   evaluateError?: string | null;
+  evaluateStatusUpdatedAt?: string | null;
   evaluation?: VoiceEvaluationDetail | null;
 }
 
@@ -115,12 +116,26 @@ export interface WebSocketAudioChunkMessage {
   isLast: boolean;
 }
 
+export interface WebSocketControlResponseMessage {
+  type: 'control';
+  action: string;
+  message?: string;
+  timestamp?: number;
+}
+
+export interface WebSocketErrorMessage {
+  type: 'error';
+  message: string;
+}
+
 export type WebSocketMessage =
   | WebSocketAudioMessage
   | WebSocketSubtitleMessage
   | WebSocketAudioResponseMessage
   | WebSocketTextMessage
-  | WebSocketAudioChunkMessage;
+  | WebSocketAudioChunkMessage
+  | WebSocketControlResponseMessage
+  | WebSocketErrorMessage;
 
 // WebSocket 事件处理器
 export interface WebSocketEventHandlers {
@@ -129,6 +144,8 @@ export interface WebSocketEventHandlers {
   onAudioResponse?: (audioData: string, text: string) => void;
   onTextResponse?: (text: string, isFinal: boolean) => void;
   onAudioChunk?: (data: string, index: number, isLast: boolean) => void;
+  onControl?: (action: string, message?: string) => void;
+  onErrorMessage?: (message: string) => void;
   onOpen?: () => void;
   onClose?: (event: CloseEvent) => void;
   onError?: (error: Event) => void;
@@ -286,6 +303,12 @@ export class VoiceInterviewWebSocket {
                 const textMsg = message as WebSocketTextMessage;
                 this.handlers.onTextResponse?.(textMsg.content, !!textMsg.final);
               }
+              break;
+            case 'control':
+              this.handlers.onControl?.(message.action, message.message);
+              break;
+            case 'error':
+              this.handlers.onErrorMessage?.(message.message);
               break;
           }
         } catch (error) {

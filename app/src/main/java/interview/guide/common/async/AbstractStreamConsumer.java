@@ -78,6 +78,8 @@ public abstract class AbstractStreamConsumer<T> {
                     consumerName,
                     AsyncTaskStreamConstants.BATCH_SIZE,
                     AsyncTaskStreamConstants.POLL_INTERVAL_MS,
+                    AsyncTaskStreamConstants.PENDING_IDLE_TIMEOUT_MS,
+                    AsyncTaskStreamConstants.PENDING_CLAIM_BATCH_SIZE,
                     this::processMessage
                 );
             } catch (Exception e) {
@@ -91,7 +93,17 @@ public abstract class AbstractStreamConsumer<T> {
     }
 
     private void processMessage(StreamMessageId messageId, Map<String, String> data) {
-        T payload = parsePayload(messageId, data);
+        T payload;
+        try {
+            payload = parsePayload(messageId, data);
+        } catch (Exception e) {
+            Object fields = data == null ? null : data.keySet();
+            log.warn("Failed to parse {} stream message, ack and discard: messageId={}, fields={}",
+                taskDisplayName(), messageId, fields, e);
+            ackMessage(messageId);
+            return;
+        }
+
         if (payload == null) {
             ackMessage(messageId);
             return;
@@ -102,7 +114,16 @@ public abstract class AbstractStreamConsumer<T> {
             taskDisplayName(), payloadIdentifier(payload), messageId, retryCount);
 
         try {
-            markProcessing(payload);
+            if (shouldSkip(payload)) {
+                ackMessage(messageId);
+                log.info("{} task skipped: {}", taskDisplayName(), payloadIdentifier(payload));
+                return;
+            }
+            if (!tryMarkProcessing(payload)) {
+                ackMessage(messageId);
+                log.info("{} task was not claimed: {}", taskDisplayName(), payloadIdentifier(payload));
+                return;
+            }
             processBusiness(payload);
             markCompleted(payload);
             ackMessage(messageId);
@@ -121,6 +142,9 @@ public abstract class AbstractStreamConsumer<T> {
     }
 
     protected int parseRetryCount(Map<String, String> data) {
+        if (data == null) {
+            return 0;
+        }
         try {
             return Integer.parseInt(data.getOrDefault(AsyncTaskStreamConstants.FIELD_RETRY_COUNT, "0"));
         } catch (NumberFormatException e) {
@@ -161,7 +185,19 @@ public abstract class AbstractStreamConsumer<T> {
 
     protected abstract String payloadIdentifier(T payload);
 
+    protected boolean shouldSkip(T payload) {
+        return false;
+    }
+
     protected abstract void markProcessing(T payload);
+
+    /**
+     * 尝试领取任务。默认保持原有消费者的状态更新语义。
+     */
+    protected boolean tryMarkProcessing(T payload) {
+        markProcessing(payload);
+        return true;
+    }
 
     protected abstract void processBusiness(T payload);
 

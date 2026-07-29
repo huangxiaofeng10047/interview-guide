@@ -91,6 +91,8 @@ public class InterviewSessionService {
             sessionId,
             request.resumeText() != null ? request.resumeText() : "",
             request.resumeId(),
+            null,
+            null,
             questions,
             0,
             SessionStatus.CREATED
@@ -110,7 +112,38 @@ public class InterviewSessionService {
             questions.size(),
             0,
             questions,
-            SessionStatus.CREATED
+            SessionStatus.CREATED,
+            null,
+            null
+        );
+    }
+
+    public InterviewSessionDTO createSessionFromQuestions(List<InterviewQuestionDTO> questions,
+                                                          String llmProvider,
+                                                          String skillId,
+                                                          String difficulty,
+                                                          Long knowledgeBaseId,
+                                                          String interviewCategory) {
+        if (questions == null || questions.isEmpty()) {
+            throw new BusinessException(ErrorCode.INTERVIEW_QUESTION_NOT_FOUND, "面试题目不能为空");
+        }
+
+        String sessionId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        persistenceService.saveSession(
+            sessionId, null, questions.size(), questions, llmProvider, skillId, difficulty,
+            "KNOWLEDGE_BASE", knowledgeBaseId, interviewCategory);
+        sessionCache.saveSession(sessionId, "", null, knowledgeBaseId, interviewCategory,
+            questions, 0, SessionStatus.CREATED);
+
+        return new InterviewSessionDTO(
+            sessionId,
+            "",
+            questions.size(),
+            0,
+            questions,
+            SessionStatus.CREATED,
+            knowledgeBaseId,
+            interviewCategory
         );
     }
 
@@ -215,6 +248,8 @@ public class InterviewSessionService {
                 entity.getSessionId(),
                 entity.getResume() != null ? entity.getResume().getResumeText() : "",
                 entity.getResume() != null ? entity.getResume().getId() : null,
+                entity.getKnowledgeBaseId(),
+                entity.getInterviewCategory(),
                 questions,
                 entity.getCurrentQuestionIndex(),
                 status
@@ -312,34 +347,14 @@ public class InterviewSessionService {
 
         SessionStatus newStatus = hasNextQuestion ? SessionStatus.IN_PROGRESS : SessionStatus.COMPLETED;
 
-        // 更新 Redis 缓存
+        persistSubmittedAnswer(request, index, question, newIndex, newStatus);
+
+        // 更新 Redis 缓存。DB 已经持久化成功，缓存失败时可由后续读取从数据库恢复。
         sessionCache.updateQuestions(request.sessionId(), questions);
         sessionCache.updateCurrentIndex(request.sessionId(), newIndex);
         if (newStatus == SessionStatus.COMPLETED) {
             sessionCache.updateSessionStatus(request.sessionId(), SessionStatus.COMPLETED);
-        }
-
-        // 保存答案到数据库
-        try {
-            persistenceService.saveAnswer(
-                request.sessionId(), index,
-                question.question(), question.category(),
-                request.answer(), 0, null  // 分数在报告生成时更新
-            );
-            persistenceService.updateCurrentQuestionIndex(request.sessionId(), newIndex);
-            persistenceService.updateSessionStatus(request.sessionId(),
-                newStatus == SessionStatus.COMPLETED
-                    ? InterviewSessionEntity.SessionStatus.COMPLETED
-                    : InterviewSessionEntity.SessionStatus.IN_PROGRESS);
-
-            // 如果是最后一题，设置评估状态为 PENDING 并触发异步评估
-            if (!hasNextQuestion) {
-                persistenceService.updateEvaluateStatus(request.sessionId(), AsyncTaskStatus.PENDING, null);
-                evaluateStreamProducer.sendEvaluateTask(request.sessionId());
-                log.info("会话 {} 已完成所有问题，评估任务已入队", request.sessionId());
-            }
-        } catch (Exception e) {
-            log.warn("保存答案到数据库失败: {}", e.getMessage());
+            enqueueEvaluationTask(request.sessionId());
         }
 
         log.info("会话 {} 提交答案: 问题{}, 剩余{}题",
@@ -351,6 +366,36 @@ public class InterviewSessionService {
             newIndex,
             questions.size()
         );
+    }
+
+    private void persistSubmittedAnswer(SubmitAnswerRequest request, int index,
+                                        InterviewQuestionDTO question, int newIndex,
+                                        SessionStatus newStatus) {
+        try {
+            persistenceService.saveAnswer(
+                request.sessionId(), index,
+                question.question(), question.category(),
+                request.answer(), 0, null  // 分数在报告生成时更新
+            );
+            persistenceService.updateCurrentQuestionIndex(request.sessionId(), newIndex);
+            persistenceService.updateSessionStatus(request.sessionId(),
+                newStatus == SessionStatus.COMPLETED
+                    ? InterviewSessionEntity.SessionStatus.COMPLETED
+                    : InterviewSessionEntity.SessionStatus.IN_PROGRESS);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("保存答案到数据库失败: sessionId={}, questionIndex={}",
+                request.sessionId(), index, e);
+            throw new BusinessException(ErrorCode.INTERVIEW_ANSWER_SAVE_FAILED,
+                "保存答案失败，请稍后重试");
+        }
+    }
+
+    private void enqueueEvaluationTask(String sessionId) {
+        persistenceService.updateEvaluateStatus(sessionId, AsyncTaskStatus.PENDING, null);
+        evaluateStreamProducer.sendEvaluateTask(sessionId);
+        log.info("会话 {} 已完成所有问题，评估任务已入队", sessionId);
     }
 
     /**
@@ -497,7 +542,9 @@ public class InterviewSessionService {
             questions.size(),
             session.getCurrentIndex(),
             questions,
-            session.getStatus()
+            session.getStatus(),
+            session.getKnowledgeBaseId(),
+            session.getInterviewCategory()
         );
     }
 }

@@ -1,5 +1,6 @@
 package interview.guide.common.ai;
 
+import com.openai.client.OpenAIClient;
 import interview.guide.common.config.LlmProviderProperties;
 import interview.guide.common.config.LlmProviderProperties.AdvisorConfig;
 import interview.guide.common.config.LlmProviderProperties.ProviderConfig;
@@ -16,7 +17,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.SafeGuardAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
-import org.springframework.ai.chat.client.advisor.ToolCallAdvisor;
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -26,8 +27,6 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
-import org.springframework.ai.retry.RetryUtils;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -49,6 +48,7 @@ public class LlmProviderRegistry {
 
     private final LlmProviderProperties properties;
     private final Map<String, ChatClient> clientCache = new ConcurrentHashMap<>();
+    private final Map<String, OpenAiChatModel> chatModelCache = new ConcurrentHashMap<>();
     private final Map<String, EmbeddingModel> embeddingModelCache = new ConcurrentHashMap<>();
     private final LlmProviderRepository providerRepository;
     private final LlmGlobalSettingRepository globalSettingRepository;
@@ -116,13 +116,11 @@ public class LlmProviderRegistry {
     }
 
     /**
-     * Get a ChatClient for the specified provider, falling back to the default if null or blank.
+     * Get a ChatClient for the specified provider, falling back to the default if null, blank, or
+     * the legacy "default" alias.
      */
     public ChatClient getChatClientOrDefault(String providerId) {
-        if (providerId != null && !providerId.isBlank()) {
-            return getChatClient(providerId);
-        }
-        return getDefaultChatClient();
+        return getChatClient(resolveProviderId(providerId));
     }
 
     /**
@@ -147,8 +145,9 @@ public class LlmProviderRegistry {
      * 清空缓存，重新加载所有 provider。
      */
     public void reload() {
-        int size = clientCache.size() + embeddingModelCache.size();
+        int size = clientCache.size() + chatModelCache.size() + embeddingModelCache.size();
         clientCache.clear();
+        chatModelCache.clear();
         embeddingModelCache.clear();
         log.info("[LlmProviderRegistry] Cache cleared ({} entries). Next access will re-create clients.", size);
     }
@@ -165,15 +164,15 @@ public class LlmProviderRegistry {
     }
 
     private ChatClient createChatClient(String providerId) {
-        OpenAiChatModel chatModel = buildChatModel(providerId);
+        OpenAiChatModel chatModel = getChatModel(providerId);
 
         ChatClient.Builder builder = ChatClient.builder(chatModel);
         if (interviewSkillsToolCallback != null) {
-            builder.defaultToolCallbacks(interviewSkillsToolCallback);
+            builder.defaultTools(interviewSkillsToolCallback);
         }
         List<Advisor> advisors = buildDefaultAdvisors(providerId);
         if (!advisors.isEmpty()) {
-            builder.defaultAdvisors(advisors.toArray(new Advisor[0]));
+            builder.defaultAdvisors(advisors);
             log.info("[LlmProviderRegistry] Applied {} advisors for provider {}", advisors.size(), providerId);
         }
 
@@ -181,30 +180,37 @@ public class LlmProviderRegistry {
     }
 
     private ChatClient createPlainChatClient(String providerId) {
-        OpenAiChatModel chatModel = buildChatModel(providerId);
+        OpenAiChatModel chatModel = getChatModel(providerId);
         ChatClient.Builder builder = ChatClient.builder(chatModel);
-        buildSafeGuardAdvisor().ifPresent(advisor -> builder.defaultAdvisors(advisor));
+        buildSafeGuardAdvisor().ifPresent(advisor -> builder.defaultAdvisors(List.of(advisor)));
         log.info("[LlmProviderRegistry] Created plain ChatClient (no tools) for {}", providerId);
         return builder.build();
     }
 
     private ChatClient createVoiceChatClient(String providerId) {
-        OpenAiChatModel chatModel = buildChatModel(providerId);
+        OpenAiChatModel chatModel = getChatModel(providerId);
 
         ChatClient.Builder builder = ChatClient.builder(chatModel);
         if (interviewSkillsToolCallback != null) {
-            builder.defaultToolCallbacks(interviewSkillsToolCallback);
+            builder.defaultTools(interviewSkillsToolCallback);
         }
         List<Advisor> advisors = new ArrayList<>();
         if (toolCallingManager != null) {
-            advisors.add(buildToolCallAdvisor(true, true));
+            advisors.add(buildToolCallAdvisor(true));
         }
         buildSafeGuardAdvisor().ifPresent(advisors::add);
         if (!advisors.isEmpty()) {
-            builder.defaultAdvisors(advisors.toArray(new Advisor[0]));
+            builder.defaultAdvisors(advisors);
         }
         log.info("[LlmProviderRegistry] Created voice ChatClient (SkillsTool + streaming ToolCall) for {}", providerId);
         return builder.build();
+    }
+
+    private OpenAiChatModel getChatModel(String providerId) {
+        return chatModelCache.computeIfAbsent(providerId, id -> {
+            log.info("[LlmProviderRegistry] Creating new ChatModel for provider: {}", id);
+            return buildChatModel(id);
+        });
     }
 
     private OpenAiChatModel buildChatModel(String providerId) {
@@ -212,20 +218,19 @@ public class LlmProviderRegistry {
         log.info("[LlmProviderRegistry] Building ChatModel - Provider: {}, BaseUrl: {}, Model: {}",
                  providerId, config.baseUrl(), config.model());
 
-        OpenAiApi openAiApi = ApiPathResolver.buildOpenAiApi(config.baseUrl(), config.apiKey());
+        OpenAIClient openAiClient = ApiPathResolver.buildOpenAiClient(config.baseUrl(), config.apiKey());
 
         OpenAiChatOptions options = OpenAiChatOptions.builder()
                 .model(config.model())
                 .temperature(config.temperature() != null ? config.temperature() : 0.2)
                 .build();
 
-        return new OpenAiChatModel(
-                openAiApi,
-                options,
-                toolCallingManager,
-                RetryUtils.DEFAULT_RETRY_TEMPLATE,
-                observationRegistry != null ? observationRegistry : ObservationRegistry.NOOP
-        );
+        return OpenAiChatModel.builder()
+            .openAiClient(openAiClient)
+            .openAiClientAsync(openAiClient.async())
+            .options(options)
+            .observationRegistry(observationRegistry != null ? observationRegistry : ObservationRegistry.NOOP)
+            .build();
     }
 
     private EmbeddingModel createEmbeddingModel(String providerId) {
@@ -246,19 +251,18 @@ public class LlmProviderRegistry {
         log.info("[LlmProviderRegistry] Building EmbeddingModel - Provider: {}, BaseUrl: {}, Model: {}",
             providerId, config.baseUrl(), config.embeddingModel());
 
-        OpenAiApi openAiApi = ApiPathResolver.buildOpenAiApi(config.baseUrl(), config.apiKey());
+        OpenAIClient openAiClient = ApiPathResolver.buildOpenAiClient(config.baseUrl(), config.apiKey());
         OpenAiEmbeddingOptions options = OpenAiEmbeddingOptions.builder()
             .model(config.embeddingModel())
             .dimensions(resolveEmbeddingDimensions(config.embeddingDimensions()))
             .build();
 
-        return new OpenAiEmbeddingModel(
-            openAiApi,
-            MetadataMode.EMBED,
-            options,
-            RetryUtils.DEFAULT_RETRY_TEMPLATE,
-            observationRegistry != null ? observationRegistry : ObservationRegistry.NOOP
-        );
+        return OpenAiEmbeddingModel.builder()
+            .openAiClient(openAiClient)
+            .metadataMode(MetadataMode.EMBED)
+            .options(options)
+            .observationRegistry(observationRegistry != null ? observationRegistry : ObservationRegistry.NOOP)
+            .build();
     }
 
     private List<Advisor> buildDefaultAdvisors(String providerId) {
@@ -271,9 +275,7 @@ public class LlmProviderRegistry {
 
         if (config.isToolCallEnabled()) {
             if (toolCallingManager != null) {
-                advisors.add(buildToolCallAdvisor(
-                    config.isToolCallConversationHistoryEnabled(),
-                    config.isStreamToolCallResponses()));
+                advisors.add(buildToolCallAdvisor(config.isToolCallConversationHistoryEnabled()));
             } else {
                 log.warn("[LlmProviderRegistry] ToolCallAdvisor skipped: ToolCallingManager unavailable, provider={}", providerId);
             }
@@ -298,12 +300,10 @@ public class LlmProviderRegistry {
         return advisors;
     }
 
-    private ToolCallAdvisor buildToolCallAdvisor(boolean conversationHistoryEnabled,
-                                                  boolean streamToolCallResponses) {
-        return ToolCallAdvisor.builder()
+    private ToolCallingAdvisor buildToolCallAdvisor(boolean conversationHistoryEnabled) {
+        return ToolCallingAdvisor.builder()
             .toolCallingManager(toolCallingManager)
             .conversationHistoryEnabled(conversationHistoryEnabled)
-            .streamToolCallResponses(streamToolCallResponses)
             .build();
     }
 
@@ -321,8 +321,10 @@ public class LlmProviderRegistry {
     }
 
     private String resolveProviderId(String providerId) {
-        return (providerId != null && !providerId.isBlank())
-            ? providerId : resolveDefaultChatProviderId();
+        if (providerId == null || providerId.isBlank() || "default".equalsIgnoreCase(providerId.trim())) {
+            return resolveDefaultChatProviderId();
+        }
+        return providerId;
     }
 
     private String resolveDefaultChatProviderId() {
